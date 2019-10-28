@@ -30,6 +30,7 @@
 client
 server_v1
 server_v2
+server_v3
 *.exe
 *.out
 *.app
