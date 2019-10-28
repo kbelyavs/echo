@@ -29,6 +29,10 @@
 # Executables
 client
 server_v1
+server_v2
 *.exe
 *.out
 *.app
+
+# Folders
+.vscode/

@@ -32,7 +32,7 @@ void callback() {
         for (auto connect : connects) {
             std::vector<char> buf(256);
             if (recv(connect, buf.data(), buf.size(), 0) <= 0)
-                continue;  // to update connections list
+                continue;  // to update connections list 0; -1 && !EAGAIN -> err
             read = true;
             // printf("Received (server) : %s\n", buf.data());
             send(connect, buf.data(), buf.size(), 0);
@@ -43,14 +43,14 @@ void callback() {
 }
 
 int main() {
-    int server = socket(PF_INET, SOCK_STREAM, 0);  // or AF_INET
+    int server = socket(AF_INET, SOCK_STREAM, 0);
     if (server == -1) {
         perror("socket()");
         exit(EXIT_FAILURE);
     }
     struct sockaddr_in srv_addr, clnt_addr;
     uint32_t addr_size = sizeof(srv_addr);
-    srv_addr.sin_family = PF_INET;
+    srv_addr.sin_family = AF_INET;
     srv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     srv_addr.sin_port = htons(1234);
     if (bind(server, (struct sockaddr*) &srv_addr, addr_size) != 0) {
@@ -93,8 +93,5 @@ int main() {
             t.detach();
         }
     }
-    for (int con : connections)
-        close(con);
-    close(server);
     return 0;
 }

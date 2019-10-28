@@ -63,7 +63,7 @@ int main() {
     }
     struct sockaddr_in srv_addr, clnt_addr;
     uint32_t addr_size = sizeof(srv_addr);
-    srv_addr.sin_family = PF_INET;
+    srv_addr.sin_family = AF_INET;
     srv_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     srv_addr.sin_port = htons(1234);
     FD_ZERO(&readfds);
@@ -96,8 +96,5 @@ int main() {
             t.detach();
         }
     }
-    for (int con : connections)
-        close(con);
-    close(server);
     return 0;
 }
