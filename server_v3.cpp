@@ -27,8 +27,11 @@ void callback() {
             std::vector<char> buf(256);
             if (evList[i].filter == EVFILT_READ) {
                 int len = recv((int)evList[i].ident, buf.data(), buf.size(), 0);
-                if (len == 0)
-                    continue;  // to update connections list
+                if (len == 0) {
+                    printf("client %d disconnected\n", (int)evList[i].ident);
+                    close((int)evList[i].ident);
+                    continue;
+                }
                 else if (len < 0) {
                     perror("recv()");
                     exit(EXIT_FAILURE);
