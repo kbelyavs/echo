@@ -16,28 +16,44 @@ int kq = kqueue();
 int MAX_CONN = 1000;
 
 void callback() {
-    // printf("callback launched\n");
-    struct timeval tv;
-    tv.tv_sec = 0;
-    tv.tv_usec = 100000;  // 0.1s
     struct kevent evList[MAX_CONN];
+    std::vector<char> buf(256);
     while (true) {
         int nev = kevent(kq, NULL, 0, evList, MAX_CONN, NULL);
+        if (nev == -1) {
+            if (errno == EINTR)  // interrupted, try again
+                continue;
+            perror("kevent()");
+            return;
+        }
         for (int i = 0; i < nev; i++) {
-            std::vector<char> buf(256);
-            if (evList[i].filter == EVFILT_READ) {
-                int len = recv((int)evList[i].ident, buf.data(), buf.size(), 0);
-                if (len == 0) {
-                    printf("client %d disconnected\n", (int)evList[i].ident);
-                    close((int)evList[i].ident);
-                    continue;
+            if (evList[i].filter != EVFILT_READ)
+                continue;
+            int connect = static_cast<int>(evList[i].ident);
+            while (true) {
+                int ret = recv(connect, buf.data(), buf.capacity(), 0);
+                if (ret <= 0) {
+                    if (ret == -1 && errno == EINTR)  // interrupted, try again
+                        continue;
+                    if (ret == -1)
+                        perror("recv()");
+                    printf("client %d disconnected\n", connect);
+                    close(connect);  // close will also remove associated event
+                    break;
                 }
-                else if (len < 0) {
-                    perror("recv()");
-                    exit(EXIT_FAILURE);
+                int size = ret;
+                char *ptr = buf.data();
+                while (size > 0 && (ret = send(connect, ptr, size, 0)) != 0) {
+                    if (ret == -1) {
+                        if (errno == EINTR)
+                            continue;
+                        perror("send()");
+                        break;
+                    }
+                    size -= ret;
+                    ptr += ret;
                 }
-                // printf("Received (server) : %s\n", buf.data());
-                send((int)evList[i].ident, buf.data(), buf.size(), 0);
+                break;
             }
         }
     }
@@ -70,7 +86,6 @@ int main() {
             perror("accept()");
             exit(EXIT_FAILURE);
         }
-        // printf("A new connection established\n");
         EV_SET(&evSet, connect, EVFILT_READ, EV_ADD, 0, 0, NULL);
         kevent(kq, &evSet, 1, NULL, 0, NULL);
         if (!run) {
