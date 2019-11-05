@@ -15,22 +15,22 @@
 
 std::mutex mu;
 std::vector<int> connections;
-fd_set readfds, copy;
+fd_set readfds, _readfds;  // FD_SETSIZE 1024 by default
 int fd_max = 0;
 
 void callback() {
-    // printf("callback launched\n");
     struct timeval tv;
     tv.tv_sec = 0;
-    tv.tv_usec = 100000;  // 0.1s
-    std::vector<int> connects;
+    tv.tv_usec = 10000;  // 10ms
+    std::vector<int> _connections;
+    std::vector<char> buf(256);
     while (true) {
         {
-            std::lock_guard<std::mutex> lg(mu);  // use unique_lock instead
-            connects = connections;
-            FD_COPY(&readfds, &copy);
+            std::lock_guard<std::mutex> lg(mu);
+            _connections = connections;
+            FD_COPY(&readfds, &_readfds);
         }
-        int ret = select(fd_max+1, &copy, NULL, NULL, &tv);
+        int ret = select(fd_max+1, &_readfds, NULL, NULL, &tv);
         if (ret == -1) {
             perror("select()");
             exit(EXIT_FAILURE);
@@ -38,18 +38,41 @@ void callback() {
             printf("no data, timeout %d usec", tv.tv_usec);
             continue;
         }
-        for (auto connect : connects) {
-            std::vector<char> buf(256);
-            if (FD_ISSET(connect, &copy)) {
-                int len = recv(connect, buf.data(), buf.size(), 0);
-                if (len == 0)
-                    continue;  // to update connections list
-                else if (len < 0) {
-                    perror("recv()");
-                    exit(EXIT_FAILURE);
+        int nconns = _connections.size();
+        for (int i = 0; i < nconns; i++) {
+            int connect = _connections[i];
+            if (!FD_ISSET(connect, &_readfds))
+                continue;
+            bool ok = false;
+            while (true) {
+                if ((ret = recv(connect, buf.data(), buf.capacity(), 0)) <= 0) {
+                    if (ret == 0)  // connection closed
+                        break;
+                    if (errno == EINTR)  // interrupted, try again
+                        continue;
+                    perror("recv()");  // close and update connections list
+                    break;
                 }
-                // printf("Received (server) : %s\n", buf.data());
-                send(connect, buf.data(), buf.size(), 0);
+                ok = true;
+                int size = ret;
+                char *ptr = buf.data();
+                while (size > 0 && (ret = send(connect, ptr, size, 0)) != 0) {
+                    if (ret == -1) {
+                        if (errno == EINTR)
+                            continue;
+                        perror("send()");
+                        break;
+                    }
+                    size -= ret;
+                    ptr += ret;
+                }
+                break;
+            }
+            if (!ok) {  // close and update connections list
+                close(connect);
+                std::lock_guard<std::mutex> lg(mu);
+                connections[i] = connections[connections.size() - 1];
+                connections.pop_back();
             }
         }
     }
@@ -82,7 +105,6 @@ int main() {
             perror("accept()");
             exit(EXIT_FAILURE);
         }
-        // printf("A new connection established\n");
         {
             std::lock_guard<std::mutex> lg(mu);
             FD_SET(connect, &readfds);
